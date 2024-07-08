@@ -118,6 +118,7 @@ namespace DeadByDaylightRecogniser
             }
         }
 
+
         /// <summary>
         /// Process the result for a single player.
         /// </summary>
@@ -126,22 +127,142 @@ namespace DeadByDaylightRecogniser
         {
             using (var t = new ResourcesTracker())
             {
-                var prestigeBounds = new Rect((int)(res.Width * .02d), (int)(res.Height * 0.35d), (int)(res.Width * 0.09d), (int)(res.Height * 0.35d));
-                var prestigeMat = t.T(new Mat(res, prestigeBounds));
-                var prestige = ReadNumber(prestigeMat);
-
-                var scoreBounds = new Rect((int)(res.Width * .75d), (int)(res.Height * .4d), (int)(res.Width * .25d), (int)(res.Height * .5d));
-                var scoreMat = t.T(new Mat(res, scoreBounds));
-                var score = ReadNumber(scoreMat);
-
-                var characterBounds = new Rect((int)(res.Width * .2d), 0, (int)(res.Width * .5d), (int)(res.Height * .3d));
-                var characterMat = t.T(new Mat(res, characterBounds));
-                var character = ReadCharacter(characterMat);
+                var prestige = ExtractPrestige(res, t);
+                var score = ExtractScore(res, t);
+                var character = ExtractCharacter(res, t);
+                var perksBounds = ExtractItem(res, t);
 
                 Console.WriteLine($"{prestige} - {character} - {score}");
             }
 
-        } 
+        }
+        #endregion
+
+        #region Extract Methods
+
+        #region Constants
+        private const double PrestigeLeftRatio = 0.02;
+        private const double PrestigeTopRatio = 0.35;
+        private const double PrestigeWidthRatio = 0.09;
+        private const double PrestigeHeightRatio = 0.35;
+
+        private const double ScoreLeftRatio = 0.75;
+        private const double ScoreTopRatio = 0.4;
+        private const double ScoreWidthRatio = 0.25;
+        private const double ScoreHeightRatio = 0.5;
+
+        private const double CharacterLeftRatio = 0.2;
+        private const double CharacterTopRatio = 0.0;
+        private const double CharacterWidthRatio = 0.5;
+        private const double CharacterHeightRatio = 0.3;
+
+        private const double PerksLeftRatio = 0.15;
+        private const double PerksTopRatio = 0.35;
+        private const double PerksWidthRatio = 0.3;
+        private const double PerksHeightRatio = 0.65;
+
+        private const double OfferingLeftRatio = 0.46;
+        private const double OfferingTopRatio = 0.35;
+        private const double OfferingWidthRatio = 0.075;
+        private const double OfferingHeightRatio = 0.65;
+
+        private const double ItemLeftRatio = 0.55;
+        private const double ItemTopRatio = 0.35;
+        private const double ItemWidthRatio = 0.2;
+        private const double ItemHeightRatio = 0.65;
+        #endregion
+
+        /// <summary>
+        /// Extracts the prestige number from the image. 
+        /// </summary>
+        /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
+        /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
+        /// <returns>An integer representing the prestige number. Returns 0 if recognition fails.</returns>
+        private int ExtractPrestige(Mat res, ResourcesTracker t)
+        {
+            var bounds = CalculateRect(res, PrestigeLeftRatio, PrestigeTopRatio, PrestigeWidthRatio, PrestigeHeightRatio);
+            var mat = t.T(new Mat(res, bounds));
+            return ReadNumber(mat);
+        }
+        /// <summary>
+        /// Extracts the score number from the image. 
+        /// </summary>
+        /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
+        /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
+        /// <returns>An integer representing the score number. Returns 0 if recognition fails.</returns>
+        private int ExtractScore(Mat res, ResourcesTracker t)
+        {
+            var bounds = CalculateRect(res, ScoreLeftRatio, ScoreTopRatio, ScoreWidthRatio, ScoreHeightRatio);
+            var mat = t.T(new Mat(res, bounds));
+            return ReadNumber(mat);
+        }
+        /// <summary>
+        /// Extracts the name of the player's character from the image. 
+        /// </summary>
+        /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
+        /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
+        /// <returns>A string representing the character name. Returns null if recognition fails.</returns>
+        private string ExtractCharacter(Mat res, ResourcesTracker t)
+        {
+            var bounds = CalculateRect(res, CharacterLeftRatio, CharacterTopRatio, CharacterWidthRatio, CharacterHeightRatio);
+            var mat = t.T(new Mat(res, bounds));
+            return ReadCharacter(mat);
+        }
+        /// <summary>
+        /// Extracts the names of the player's perks from the image. 
+        /// </summary>
+        /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
+        /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
+        /// <returns>A string array representing names of player's perks. Returns null if recognition fails.</returns>
+        private string[] ExtractPerks(Mat res, ResourcesTracker t)
+        {
+            var bounds = CalculateRect(res, PerksLeftRatio, PerksTopRatio, PerksWidthRatio, PerksHeightRatio);
+            var mat = t.T(new Mat(res, bounds));
+            return ReadPerks(mat);
+        }
+        /// <summary>
+        /// Extracts the name of player's offering from the image. 
+        /// </summary>
+        /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
+        /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
+        /// <returns>A string representing the offering name. Returns null if recognition fails.</returns>
+        private string ExtractOffering(Mat res, ResourcesTracker t)
+        {
+            var bounds = CalculateRect(res, OfferingLeftRatio, OfferingTopRatio, OfferingWidthRatio, OfferingHeightRatio);
+            var mat = t.T(new Mat(res, bounds));
+            return ReadOffering(mat);
+        }
+        /// <summary>
+        /// Extracts the name of player's item and names of its addons from the image. 
+        /// </summary>
+        /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
+        /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
+        /// <returns>A <see cref="Item"/> object representing the player's item name and its addons names. Returns null if recognition fails.</returns>
+        private Item? ExtractItem(Mat res, ResourcesTracker t)
+        {
+            var bounds = CalculateRect(res, ItemLeftRatio, ItemTopRatio, ItemWidthRatio, ItemHeightRatio);
+            var mat = t.T(new Mat(res, bounds));
+            Window.ShowImages(mat);
+            return ReadItem(mat);
+        }
+        /// <summary>
+        /// Calculates the rect to extract the specified part of image. 
+        /// </summary>
+        /// <param name="res">The <see cref="Mat"/> object that representing player's result.</param>
+        /// <param name="leftRatio">Left ratio of image.</param>
+        /// <param name="topRatio">Top ratio of image./param>
+        /// <param name="widthRatio">Width ratio of image.</param>
+        /// <param name="heightRatio">Height ratio of image.</param>
+        /// <returns>Bounds of specified part of image.</returns>
+        private Rect CalculateRect(Mat res, double leftRatio, double topRatio, double widthRatio, double heightRatio)
+        {
+            return new Rect(
+                (int)(res.Width * leftRatio),
+                (int)(res.Height * topRatio),
+                (int)(res.Width * widthRatio),
+                (int)(res.Height * heightRatio)
+            );
+        }
         #endregion
 
         #region Reading Methods
