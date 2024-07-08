@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using static System.Net.Mime.MediaTypeNames;
 using System.Drawing;
 using System.Text.RegularExpressions;
+using SixLabors.ImageSharp;
 
 namespace DeadByDaylightRecogniser
 {
@@ -46,7 +47,7 @@ namespace DeadByDaylightRecogniser
         /// </summary>
         public void Process()
         {
-            using (ResourcesTracker t = new ResourcesTracker())
+            using (var t = new ResourcesTracker())
             {
                 Mat grey = t.NewMat();
                 Cv2.CvtColor(_result, grey, ColorConversionCodes.BGR2GRAY);
@@ -123,7 +124,7 @@ namespace DeadByDaylightRecogniser
         /// <param name="res">The <see cref="Mat"/> object representing the image of a player result</param>
         private void ProcessPlayerResult(Mat res)
         {
-            using (ResourcesTracker t = new ResourcesTracker())
+            using (var t = new ResourcesTracker())
             {
                 var prestigeBounds = new Rect((int)(res.Width * .02d), (int)(res.Height * 0.35d), (int)(res.Width * 0.09d), (int)(res.Height * 0.35d));
                 var prestigeMat = t.T(new Mat(res, prestigeBounds));
@@ -133,7 +134,11 @@ namespace DeadByDaylightRecogniser
                 var scoreMat = t.T(new Mat(res, scoreBounds));
                 var score = ReadNumber(scoreMat);
 
-                Console.WriteLine($"{prestige} - {score}");
+                var characterBounds = new Rect((int)(res.Width * .2d), 0, (int)(res.Width * .5d), (int)(res.Height * .3d));
+                var characterMat = t.T(new Mat(res, characterBounds));
+                var character = ReadCharacter(characterMat);
+
+                Console.WriteLine($"{prestige} - {character} - {score}");
             }
 
         } 
@@ -147,7 +152,7 @@ namespace DeadByDaylightRecogniser
         /// <returns>An integer representing the recognized number. Returns 0 if recognition fails.</returns>
         private int ReadNumber(Mat number)
         {
-            using (ResourcesTracker t = new ResourcesTracker())
+            using (var t = new ResourcesTracker())
             using (var ocrInput = OcrApi.Create())
             {
                 Mat gray = t.NewMat();
@@ -160,11 +165,7 @@ namespace DeadByDaylightRecogniser
                 ocrInput.Init(Patagames.Ocr.Enums.Languages.English);
 
                 var ocrResult = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
-
-                //Cv2.ImShow("number", binary);
-                //Cv2.WaitKey();
-
-                string numericResult = Regex.Replace(ocrResult, @"\D", "");
+                string numericResult = Regex.Replace(ocrResult, @"\D", "").Trim();
                 int result;
                 try
                 {
@@ -184,7 +185,29 @@ namespace DeadByDaylightRecogniser
         /// <returns>A string representing the recognized character's name. Returns null if recognition fails.</returns>
         private string ReadCharacter(Mat character)
         {
-            return null;
+            using (var t = new ResourcesTracker())
+            using (var ocrInput = OcrApi.Create())
+            {
+                Mat gray = t.NewMat();
+                Cv2.CvtColor(character, gray, ColorConversionCodes.BGR2GRAY);
+
+                Mat binary = t.NewMat();
+                Cv2.Threshold(gray, binary, 128, 256, ThresholdTypes.Binary);
+                Cv2.BitwiseNot(binary, binary);
+
+                ocrInput.Init(Patagames.Ocr.Enums.Languages.English);
+                string result;
+                try
+                {
+                    var ocrResult = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
+                    result = Regex.Replace(ocrResult, @"[a-z\n]", "").Trim();
+                }
+                catch (Exception)
+                {
+                    result = null;
+                }
+                return result;
+            }
         }
         /// <summary>
         /// Processes the image to extract and recognize the names of player's perks using OpenCVsharp.
