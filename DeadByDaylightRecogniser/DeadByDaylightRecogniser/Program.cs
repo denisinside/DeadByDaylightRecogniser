@@ -10,6 +10,8 @@ namespace DeadByDaylightRecogniser
     {
         static void Main(string[] args)
         {
+            var rp = new ResultProcessing("img\\example.png");
+            rp.Process();
         }
     }
 }
