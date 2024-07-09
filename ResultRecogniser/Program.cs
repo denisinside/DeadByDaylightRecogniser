@@ -20,7 +20,7 @@ namespace DeadByDaylightRecogniser
             string jsonResponse = await response.Content.ReadAsStringAsync();
             Dictionary<string, JsonElement> perkData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonResponse);
 
-            TemplateDownloader.DownloadPerksAsync(perkData);
+            TemplateDownloader.DownloadPerks(perkData, "perks.json");
             var rp = new ResultProcessing("img\\example2.png");
             rp.Process();
         }

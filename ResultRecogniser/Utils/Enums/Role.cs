@@ -4,9 +4,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DeadByDaylightRecogniser
+namespace DeadByDaylightRecogniser.Utils.Enums
 {
-    public class Class1
-    {
-    }
+	internal enum Role
+	{
+		Survivor,
+		Killer
+	}
 }

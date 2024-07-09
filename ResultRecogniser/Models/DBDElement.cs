@@ -6,17 +6,12 @@ using System.Threading.Tasks;
 
 namespace DeadByDaylightRecogniser.Models
 {
-    internal struct Perk
+    internal struct DBDElement
     {
         public string Name { get; set; }
         public string Role { get; set; }
+        public string? Parent { get; set; }
         public byte[] Descriptors { get; set; }
-        public Perk(string name, string role, byte[] descriptor)
-        {
-            Name = name;
-            Role = role;
-            Descriptors = descriptor;
-        }
     }
 
 }
