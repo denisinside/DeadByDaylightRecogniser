@@ -9,14 +9,53 @@ using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using static System.Net.Mime.MediaTypeNames;
-using System.Drawing;
+using static System.Drawing.Bitmap;
 using System.Text.RegularExpressions;
-using SixLabors.ImageSharp;
+using System.IO;
+using System.Text.Json;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Net.Http;
 
 namespace DeadByDaylightRecogniser
 {
     internal class ResultProcessing
     {
+
+        #region Constants
+        public const int ElementResizeSize = 128;
+
+        private const double PrestigeLeftRatio = 0.02;
+        private const double PrestigeTopRatio = 0.35;
+        private const double PrestigeWidthRatio = 0.09;
+        private const double PrestigeHeightRatio = 0.35;
+
+        private const double ScoreLeftRatio = 0.75;
+        private const double ScoreTopRatio = 0.4;
+        private const double ScoreWidthRatio = 0.25;
+        private const double ScoreHeightRatio = 0.5;
+
+        private const double CharacterLeftRatio = 0.2;
+        private const double CharacterTopRatio = 0.0;
+        private const double CharacterWidthRatio = 0.5;
+        private const double CharacterHeightRatio = 0.3;
+
+        private const double PerksLeftRatio = 0.155;
+        private const double PerksTopRatio = 0.43;
+        private const double PerksWidthRatio = 0.287;
+        private const double PerksHeightRatio = 0.48;
+
+        private const double OfferingLeftRatio = 0.46;
+        private const double OfferingTopRatio = 0.35;
+        private const double OfferingWidthRatio = 0.075;
+        private const double OfferingHeightRatio = 0.65;
+
+        private const double ItemLeftRatio = 0.55;
+        private const double ItemTopRatio = 0.35;
+        private const double ItemWidthRatio = 0.2;
+        private const double ItemHeightRatio = 0.65;
+        #endregion
+
         private Mat _result;
 
         #region Constructors
@@ -55,66 +94,11 @@ namespace DeadByDaylightRecogniser
                 int resultHeight = (int)(grey.Height * 0.2);
                 for (int i = 0; i < 5; i++)
                 {
-                    Rect rect = new Rect(0, i * resultHeight, grey.Width, resultHeight);
+                    Rect rect = new Rect(0,(int)(i * resultHeight + i * 0.0165 * resultHeight), grey.Width, (int)(resultHeight - i * 0.0165 * resultHeight));
                     playerResults[i] = t.T(new Mat(_result, rect));
-                    ProcessPlayerResult(playerResults[i]);
+                    string role = i != 4 ? "survivor" : "killer";
+                    ProcessPlayerResult(playerResults[i], role);
                 }
-                //Window.ShowImages(playerResults[0], playerResults[1], playerResults[2], playerResults[3], playerResults[4]);
-
-
-
-                /* Mat blur = t.NewMat();
-                 Cv2.GaussianBlur(grey, blur, new Size(7, 7), 3, 4);
-                 Mat canny = t.NewMat();
-                 Cv2.Canny(blur, canny, 15, 100);
-                 Cv2.Dilate(canny, canny, t.NewMat(), null, 2);
-                 //Window.ShowImages(canny);
-                 Point[][] contours;
-                 HierarchyIndex[] hierarchyIndexes;
-                 Cv2.FindContours(canny, out contours, out hierarchyIndexes, mode: RetrievalModes.External, method: ContourApproximationModes.ApproxSimple);
-
-                 int perk_times = 0;
-                 Mat perk = t.T(new Mat(
-                     "C:\\Users\\denisinside\\source\\repos\\DeadByDaylightRecogniser\\DeadByDaylightRecogniser\\DeadByDaylightRecogniser\\perk2.png",
-                     ImreadModes.Color));
-                 Cv2.CvtColor(perk, perk, ColorConversionCodes.BGR2GRAY);
-                 Cv2.Resize(perk, perk, new Size(64, 64));
-                 Mat blur1 = t.NewMat();
-                 Cv2.GaussianBlur(perk, blur1, new Size(7, 7), 3, 4);
-                 Mat canny1 = t.NewMat();
-                 Cv2.Canny(blur1, canny1, 15, 100);
-                 Cv2.Dilate(canny1, canny1, t.NewMat(), null, 3);
-                 foreach (Point[] contour in contours)
-                 {
-                     var rect = Cv2.BoundingRect(contour);
-                     Cv2.Rectangle(_result, new Point(rect.X, rect.Y), new Point(rect.X + rect.Width, rect.Y + rect.Height), Scalar.BlueViolet);
-
-                     Mat mat = t.T(new Mat(canny, rect));
-                     Console.WriteLine($"mat: {mat.Width}x{mat.Height}, perk: {perk.Width}x{perk.Height}");
-                     if (mat.Width <= perk.Width && mat.Height <= perk.Height)
-                     {
-                         Mat outMat = t.NewMat();
-                         double res1, res2;
-                         Cv2.MatchTemplate(mat, canny1, outMat, TemplateMatchModes.CCoeffNormed);
-                         Cv2.MinMaxLoc(outMat, out res1, out res2);
-                         Console.WriteLine("min: " + res1 + ", max: " + res2);
-                         Cv2.PutText(_result, $"{Math.Round(res2, 2, MidpointRounding.AwayFromZero)}", new Point(rect.X + rect.Width / 3, rect.Y + rect.Height/2), HersheyFonts.HersheyTriplex, 0.5, Scalar.White);
-                         if (res2 > 0.8)
-                         {
-                             perk_times++;
-                             Cv2.Rectangle(_result, new Point(rect.X, rect.Y), new Point(rect.X + rect.Width, rect.Y + rect.Height), Scalar.Red);
-                         }
-                         Cv2.Resize(mat, mat, new Size(64, 64));
-                      //  if (Math.Round(res2, 2, MidpointRounding.AwayFromZero) == 0.58)
-                     }
-                     else
-                     {
-                         Console.WriteLine("Пропускаем область, так как она меньше шаблона");
-                     }
-                 }
-
-                 //Window.ShowImages(canny1, canny);
-                 Window.ShowImages(_result, canny1, canny);*/
             }
         }
 
@@ -123,15 +107,17 @@ namespace DeadByDaylightRecogniser
         /// Process the result for a single player.
         /// </summary>
         /// <param name="res">The <see cref="Mat"/> object representing the image of a player result</param>
-        private void ProcessPlayerResult(Mat res)
+        private void ProcessPlayerResult(Mat res, string role)
         {
             using (var t = new ResourcesTracker())
             {
                 var prestige = ExtractPrestige(res, t);
                 var score = ExtractScore(res, t);
                 var character = ExtractCharacter(res, t);
-                var perksBounds = ExtractItem(res, t);
+                var perksBounds = ExtractPerks(res, t, role);
 
+                //Cv2.ImShow("r", res);
+                //Cv2.WaitKey();
                 Console.WriteLine($"{prestige} - {character} - {score}");
             }
 
@@ -139,38 +125,6 @@ namespace DeadByDaylightRecogniser
         #endregion
 
         #region Extract Methods
-
-        #region Constants
-        private const double PrestigeLeftRatio = 0.02;
-        private const double PrestigeTopRatio = 0.35;
-        private const double PrestigeWidthRatio = 0.09;
-        private const double PrestigeHeightRatio = 0.35;
-
-        private const double ScoreLeftRatio = 0.75;
-        private const double ScoreTopRatio = 0.4;
-        private const double ScoreWidthRatio = 0.25;
-        private const double ScoreHeightRatio = 0.5;
-
-        private const double CharacterLeftRatio = 0.2;
-        private const double CharacterTopRatio = 0.0;
-        private const double CharacterWidthRatio = 0.5;
-        private const double CharacterHeightRatio = 0.3;
-
-        private const double PerksLeftRatio = 0.15;
-        private const double PerksTopRatio = 0.35;
-        private const double PerksWidthRatio = 0.3;
-        private const double PerksHeightRatio = 0.65;
-
-        private const double OfferingLeftRatio = 0.46;
-        private const double OfferingTopRatio = 0.35;
-        private const double OfferingWidthRatio = 0.075;
-        private const double OfferingHeightRatio = 0.65;
-
-        private const double ItemLeftRatio = 0.55;
-        private const double ItemTopRatio = 0.35;
-        private const double ItemWidthRatio = 0.2;
-        private const double ItemHeightRatio = 0.65;
-        #endregion
 
         /// <summary>
         /// Extracts the prestige number from the image. 
@@ -214,11 +168,11 @@ namespace DeadByDaylightRecogniser
         /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
         /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
         /// <returns>A string array representing names of player's perks. Returns null if recognition fails.</returns>
-        private string[] ExtractPerks(Mat res, ResourcesTracker t)
+        private string[] ExtractPerks(Mat res, ResourcesTracker t, string role)
         {
             var bounds = CalculateRect(res, PerksLeftRatio, PerksTopRatio, PerksWidthRatio, PerksHeightRatio);
             var mat = t.T(new Mat(res, bounds));
-            return ReadPerks(mat);
+            return ReadPerks(mat, "perks.json", role);
         }
         /// <summary>
         /// Extracts the name of player's offering from the image. 
@@ -321,7 +275,7 @@ namespace DeadByDaylightRecogniser
                 try
                 {
                     var ocrResult = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
-                    result = Regex.Replace(ocrResult, @"[a-z\n]", "").Trim();
+                    result = Regex.Replace(ocrResult, @"[^A-Z]", "").Trim();
                 }
                 catch (Exception)
                 {
@@ -330,14 +284,66 @@ namespace DeadByDaylightRecogniser
                 return result;
             }
         }
+
         /// <summary>
         /// Processes the image to extract and recognize the names of player's perks using OpenCVsharp.
         /// </summary>
         /// <param name="perks">The <see cref="Mat"/> object representing the area in the image with player's list of perks.</param>
         /// <returns>A string array with length 4 representing the recognized player's perks names. Returns null if recognition fails.</returns>
-        private string[] ReadPerks(Mat perks)
+        private string[] ReadPerks(Mat perks, string jsonPath, string role)
         {
-            return null;
+            using (var t = new ResourcesTracker())
+            {
+                string json = File.ReadAllText(jsonPath);
+                List<Perk> perkList = JsonSerializer.Deserialize<List<Perk>>(json);
+
+                string[] perkNames = new string[4];
+
+                for (int i = 1; i <= 4; i++)
+                {
+                    Mat perk = t.T(CropPerk(perks, i));
+                    Cv2.Resize(perk, perk, new Size(ElementResizeSize, ElementResizeSize));
+                    double alpha = 1.5;
+                    double beta = 0;
+                    perk.ConvertTo(perk, -1, alpha, beta);
+                    Cv2.ImShow("br", perk);
+                    Cv2.WaitKey();
+
+                    Mat greyPerk = new Mat();
+                    Cv2.CvtColor(perk, greyPerk, ColorConversionCodes.BGR2GRAY);
+
+                    var orb = ORB.Create();
+                    KeyPoint[] keypointsPerk;
+                    Mat descriptorsPerk = new Mat();
+                    orb.DetectAndCompute(greyPerk, null, out keypointsPerk, descriptorsPerk);
+
+
+                    var bfMatcher = new BFMatcher(NormTypes.Hamming, crossCheck: true);
+
+                    double maxMatchScore = 0;
+                    string bestMatchPerkName = "Not Detected";
+
+                    foreach (var perkTemplate in perkList.FindAll(e => e.Role.Equals(role.ToLower())))
+                    {
+                            Mat templateDescriptors = Cv2.ImDecode(perkTemplate.Descriptors, ImreadModes.Grayscale);
+
+                            var matches = bfMatcher.Match(descriptorsPerk, templateDescriptors);
+                            double matchScore = matches.Length;
+
+                        //Console.WriteLine($"Perk {i}: {perkTemplate.Name} with {matchScore} matches.");
+                        if (matchScore > maxMatchScore && matchScore > 30)
+                            {
+                                maxMatchScore = matchScore;
+                                bestMatchPerkName = perkTemplate.Name;
+                            }
+                    }
+
+                    perkNames[i - 1] = bestMatchPerkName;
+                    Console.WriteLine($"Perk {i}: {bestMatchPerkName} with {maxMatchScore} matches.");
+                }
+
+                return perkNames;
+            }
         }
         /// <summary>
         /// Processes the image to extract and recognize the name of player's offering using OpemCVsharp.
@@ -360,6 +366,7 @@ namespace DeadByDaylightRecogniser
         #endregion
 
         #region Additional Methods
+
         /// <summary>
         /// Crops the screen image to the region of interest.
         /// </summary>
@@ -378,7 +385,91 @@ namespace DeadByDaylightRecogniser
             Mat croppedImage = new Mat(_result, roi);
             _result.Dispose();
             _result = croppedImage;
-        } 
+        }
+        /// <summary>
+        /// Reads .png image with correct alpha channel.
+        /// </summary>
+        /// <param name="imagePath">Path to the .png image.</param>
+        /// <returns>The <see cref="Mat"/> object, that will contain the result of reading the image.</returns>
+        public static Mat ReadPNG(string imagePath)
+        {
+            using(var t = new ResourcesTracker())
+            {
+                Mat imageWithAlpha = Cv2.ImRead(imagePath, ImreadModes.Unchanged);
+
+                if (imageWithAlpha.Channels() == 4)
+                {
+                    Mat[] channels = t.T(Cv2.Split(imageWithAlpha));
+                    Mat bgr = t.NewMat();
+                    Cv2.Merge(new Mat[] { channels[0], channels[1], channels[2] }, bgr);
+
+                    Mat alpha = channels[3];
+                    Mat mask = t.NewMat();
+                    Cv2.Threshold(alpha, mask, 0, 255, ThresholdTypes.Binary);
+
+                    Mat result = new Mat();
+                    bgr.CopyTo(result, mask);
+                    imageWithAlpha.Dispose();
+                    return result;
+                }
+                else
+                {
+                    return imageWithAlpha;
+                }
+            }
+        }
+        /// <summary>
+        /// Crops the screen image to specified perk.
+        /// </summary>
+        /// <param name="perks">The <see cref="Mat"/> object representing the image with the list of perks.</param>
+        /// <param name="number">The number of the perk in the list.</param>
+        /// <returns>The <see cref="Mat"/> object representing the image with the specified perk.</returns>
+        private Mat CropPerk(Mat perks, int number)
+        {
+            double perkWidthRatio = number == 4 ? 0.22 : 0.25;
+            double perkHeightRatio = 0.95;
+            double perkLeftRatio = number == 4
+                ? 1 - perkWidthRatio 
+                : 0.009 * (number - 1) + perkWidthRatio * (number - 1); 
+            double perkTopRatio = 0.05;
+
+            var bounds = CalculateRect(perks, perkLeftRatio, perkTopRatio, perkWidthRatio, perkHeightRatio);
+
+            Mat croppedImage = new Mat(perks, bounds);
+
+            Mat mask = Mat.Zeros(croppedImage.Size(), MatType.CV_8UC1);
+            Point center = new Point(croppedImage.Width / 2, croppedImage.Height / 2);
+            int size = Math.Min(croppedImage.Width, croppedImage.Height) / 2;
+            Point[] vertices = {
+                new Point(center.X, center.Y + 1.15 * size),
+                new Point(center.X - 1.15 * size, center.Y),
+                new Point(center.X, center.Y - 0.95 * size),
+                new Point(center.X + 0.95 * size, center.Y)
+            };
+
+            Cv2.FillConvexPoly(mask, vertices, Scalar.White);
+
+            Mat result = new Mat();
+            croppedImage.CopyTo(result, mask);
+            Mat resultWithAlpha = new Mat(croppedImage.Size(), MatType.CV_8UC4);
+
+            Cv2.CvtColor(result, resultWithAlpha, ColorConversionCodes.BGR2BGRA);
+            for (int y = 0; y < resultWithAlpha.Rows; y++)
+            {
+                for (int x = 0; x < resultWithAlpha.Cols; x++)
+                {
+                    if (mask.At<byte>(y, x) == 0)
+                    {
+                        resultWithAlpha.At<Vec4b>(y, x)[3] = 0;  
+                    }
+                    else
+                    {
+                        resultWithAlpha.At<Vec4b>(y, x)[3] = 255;  
+                    }
+                }
+            }
+            return resultWithAlpha;
+        }
         #endregion
     }
 }
