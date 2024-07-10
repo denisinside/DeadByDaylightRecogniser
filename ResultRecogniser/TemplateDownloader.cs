@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DeadByDaylightRecogniser.Utils.Extensions;
 using DeadByDaylightRecogniser.Utils.Enums;
+using System.Xml.Linq;
 
 namespace DeadByDaylightRecogniser
 {
@@ -20,7 +21,7 @@ namespace DeadByDaylightRecogniser
 
         public static List<DBDElement> DownloadTemplates(string jsonPath, Dictionary<string, JsonElement> data, string dataPath, string additionalDataPath = null)
         {
-            var perks = new List<DBDElement>();
+            var elements = new List<DBDElement>();
 
             var files = Directory.EnumerateFiles(dataPath, "*.png", SearchOption.AllDirectories);
             if (additionalDataPath != null)
@@ -50,7 +51,7 @@ namespace DeadByDaylightRecogniser
                         break;
                     }
                 }
-                if (role != null && name != null)
+                if (role != null)
                 {
                     DBDElement perk = new DBDElement
                     {
@@ -58,12 +59,12 @@ namespace DeadByDaylightRecogniser
                         Descriptors = GetDescriptors(filePath),
                         Role = role
                     };
-                    perks.Add(perk);
+                    elements.Add(perk);
                 }
             }
-            string json = JsonSerializer.Serialize(perks);
+            string json = JsonSerializer.Serialize(elements);
             File.WriteAllText(jsonPath, json);
-            return perks;
+            return elements;
         }
 
         private static byte[] GetDescriptors(string filePath)

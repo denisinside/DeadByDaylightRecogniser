@@ -51,10 +51,10 @@ namespace DeadByDaylightRecogniser
         private const double PerksWidthRatio = 0.287;
         private const double PerksHeightRatio = 0.48;
 
-        private const double OfferingLeftRatio = 0.46;
-        private const double OfferingTopRatio = 0.35;
-        private const double OfferingWidthRatio = 0.075;
-        private const double OfferingHeightRatio = 0.65;
+        private const double OfferingLeftRatio = 0.468;
+        private const double OfferingTopRatio = 0.46;
+        private const double OfferingWidthRatio = 0.055;
+        private const double OfferingHeightRatio = 0.42;
 
         private const double ItemLeftRatio = 0.55;
         private const double ItemTopRatio = 0.35;
@@ -118,7 +118,9 @@ namespace DeadByDaylightRecogniser
                 var prestige = ExtractPrestige(res, t);
                 var score = ExtractScore(res, t);
                 var character = ExtractCharacter(res, t);
-                var perksBounds = ExtractPerks(res, t, role);
+                var perks = ExtractPerks(res, t, role);
+                var offering = ExtractOffering(res, t, role);
+                //var item = ExtractItem(res, t, role);
 
                 //Cv2.ImShow("r", res);
                 //Cv2.WaitKey();
@@ -200,7 +202,7 @@ namespace DeadByDaylightRecogniser
         {
             var bounds = CalculateRect(res, ItemLeftRatio, ItemTopRatio, ItemWidthRatio, ItemHeightRatio);
             var mat = t.T(new Mat(res, bounds));
-            Window.ShowImages(mat);
+            Cv2.ImShow("item",mat);
             return ReadItem(mat, "items.json","addons.json", role);
         }
         /// <summary>
@@ -268,8 +270,7 @@ namespace DeadByDaylightRecogniser
             Cv2.CvtColor(data, gray, ColorConversionCodes.BGR2GRAY);
 
             Mat binary = t.NewMat();
-            Cv2.Threshold(gray, binary, 128, 256, ThresholdTypes.Binary);
-            Cv2.BitwiseNot(binary, binary);
+            Cv2.Threshold(gray, binary, 128, 256, ThresholdTypes.BinaryInv);
 
             ocrInput.Init(Patagames.Ocr.Enums.Languages.English);
             string result = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
@@ -294,9 +295,10 @@ namespace DeadByDaylightRecogniser
             {
                 Mat perk = CropPerk(perks, i);
                 var bestMatch = ReadDBDElement(perk, perkList, role);
-                perk.Dispose();
-                string name = bestMatch == null ? "Not Detected" : bestMatch.Value.Name;
-                perkNames[i - 1] = name;
+                if(bestMatch != null)
+                    perkList.Remove((DBDElement)bestMatch);
+
+                perkNames[i - 1] = bestMatch == null ? "Not Detected" : bestMatch.Value.Name;
             }
 
             return perkNames;
@@ -308,7 +310,14 @@ namespace DeadByDaylightRecogniser
         /// <returns>A string representing the recognized offering name. Returns null if recognition fails.</returns>
         private string ReadOffering(Mat offering, string jsonPath, Role role)
         {
-            return null;
+            string json = File.ReadAllText(jsonPath);
+            List<DBDElement> offeringList = JsonSerializer.Deserialize<List<DBDElement>>(json);
+            if (offeringList == null)
+                return null;
+
+            var bestMatch = ReadDBDElement(offering, offeringList, role, -50);
+
+            return bestMatch == null ? "Not Detected" : bestMatch.Value.Name;
         }
         /// <summary>
         /// Processes the image to extract and recognize the name of player's item and item's addons using OpenCVsharp.
@@ -325,21 +334,29 @@ namespace DeadByDaylightRecogniser
         /// <param name="element">The <see cref="Mat"/> object representing the area in the image with the element.</param>
         /// <param name="elementData">The <see cref="List{DBDElement}"/> with data of elements for mathcing.</param>
         /// <param name="role">The player's role to narrow chance of incorrect matching.</param>
-        /// <returns></returns>
-        private DBDElement? ReadDBDElement(Mat element, List<DBDElement> elementData, Role role)
+        /// <returns>The <see cref="DBDElement"/> with the best matching result. Return null if the match score is too low.</returns>
+        private DBDElement? ReadDBDElement(Mat element, List<DBDElement> elementData, Role role, double elementBrightness = -20)
         {
             using var t = new ResourcesTracker();
             Cv2.Resize(element, element, new Size(ElementResizeSize, ElementResizeSize));
+
+
             double alpha = 1.5;
-            double beta = 0;
+            double beta = elementBrightness;
             element.ConvertTo(element, -1, alpha, beta);
 
-            Cv2.ImShow("br", element);
+            Cv2.ImShow("element", element);
             Cv2.WaitKey();
 
             Mat grey = t.NewMat();
             Cv2.CvtColor(element, grey, ColorConversionCodes.BGR2GRAY);
+            element.Dispose();
 
+            //if (useTreshold)
+            //    Cv2.Threshold(grey, grey, 180, 300, ThresholdTypes.Otsu);
+
+            //Cv2.ImShow("element", grey);
+            //Cv2.WaitKey();
             var orb = ORB.Create();
             Mat elementDescriptors = t.NewMat();
             orb.DetectAndCompute(grey, null, out KeyPoint[] keypointsPerk, elementDescriptors);
@@ -349,7 +366,7 @@ namespace DeadByDaylightRecogniser
 
             double maxMatchScore = 0;
             DBDElement? bestMatch = null;
-            foreach (var template in elementData.FindAll(e => e.Role == role))
+            foreach (var template in elementData.FindAll(e => e.Role == role || e.Role == Role.Unknown))
             {
                 Mat templateDescriptors = t.T(Cv2.ImDecode(template.Descriptors, ImreadModes.Grayscale));
 
