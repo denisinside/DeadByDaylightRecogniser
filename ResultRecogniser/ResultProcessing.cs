@@ -16,6 +16,7 @@ using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Collections;
 using System.Net.Http;
+using DeadByDaylightRecogniser.Utils.Enums;
 
 namespace DeadByDaylightRecogniser
 {
@@ -91,19 +92,17 @@ namespace DeadByDaylightRecogniser
         /// </summary>
         public void Process()
         {
-            using (var t = new ResourcesTracker())
+            using var t = new ResourcesTracker();
+            Mat grey = t.NewMat();
+            Cv2.CvtColor(_result, grey, ColorConversionCodes.BGR2GRAY);
+            Mat[] playerResults = new Mat[5];
+            int resultHeight = (int)(grey.Height * 0.2);
+            for (int i = 0; i < 5; i++)
             {
-                Mat grey = t.NewMat();
-                Cv2.CvtColor(_result, grey, ColorConversionCodes.BGR2GRAY);
-                Mat[] playerResults = new Mat[5];
-                int resultHeight = (int)(grey.Height * 0.2);
-                for (int i = 0; i < 5; i++)
-                {
-                    var rect = new Rect(0, (int)(i * resultHeight + i * 0.0165 * resultHeight), grey.Width, (int)(resultHeight - i * 0.0165 * resultHeight));
-                    playerResults[i] = t.T(new Mat(_result, rect));
-                    string role = i != 4 ? "survivor" : "killer";
-                    ProcessPlayerResult(playerResults[i], role);
-                }
+                var rect = new Rect(0, (int)(i * resultHeight + i * 0.0165 * resultHeight), grey.Width, (int)(resultHeight - i * 0.0165 * resultHeight));
+                playerResults[i] = t.T(new Mat(_result, rect));
+                Role role = i != 4 ? Role.Survivor : Role.Killer;
+                ProcessPlayerResult(playerResults[i], role);
             }
         }
 
@@ -112,7 +111,7 @@ namespace DeadByDaylightRecogniser
         /// Process the result for a single player.
         /// </summary>
         /// <param name="res">The <see cref="Mat"/> object representing the image of a player result</param>
-        private void ProcessPlayerResult(Mat res, string role)
+        private void ProcessPlayerResult(Mat res, Role role)
         {
             using (var t = new ResourcesTracker())
             {
@@ -173,7 +172,7 @@ namespace DeadByDaylightRecogniser
         /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
         /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
         /// <returns>A string array representing names of player's perks. Returns null if recognition fails.</returns>
-        private string[] ExtractPerks(Mat res, ResourcesTracker t, string role)
+        private string[] ExtractPerks(Mat res, ResourcesTracker t, Role role)
         {
             var bounds = CalculateRect(res, PerksLeftRatio, PerksTopRatio, PerksWidthRatio, PerksHeightRatio);
             var mat = t.T(new Mat(res, bounds));
@@ -185,11 +184,11 @@ namespace DeadByDaylightRecogniser
         /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
         /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
         /// <returns>A string representing the offering name. Returns null if recognition fails.</returns>
-        private string ExtractOffering(Mat res, ResourcesTracker t)
+        private string ExtractOffering(Mat res, ResourcesTracker t, Role role)
         {
             var bounds = CalculateRect(res, OfferingLeftRatio, OfferingTopRatio, OfferingWidthRatio, OfferingHeightRatio);
             var mat = t.T(new Mat(res, bounds));
-            return ReadOffering(mat);
+            return ReadOffering(mat, "offerings.json", role);
         }
         /// <summary>
         /// Extracts the name of player's item and names of its addons from the image. 
@@ -197,12 +196,12 @@ namespace DeadByDaylightRecogniser
         /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
         /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
         /// <returns>A <see cref="Item"/> object representing the player's item name and its addons names. Returns null if recognition fails.</returns>
-        private DBDElement[] ExtractItem(Mat res, ResourcesTracker t)
+        private DBDElement[] ExtractItem(Mat res, ResourcesTracker t, Role role)
         {
             var bounds = CalculateRect(res, ItemLeftRatio, ItemTopRatio, ItemWidthRatio, ItemHeightRatio);
             var mat = t.T(new Mat(res, bounds));
             Window.ShowImages(mat);
-            return ReadItem(mat);
+            return ReadItem(mat, "items.json","addons.json", role);
         }
         /// <summary>
         /// Calculates the rect to extract the specified part of image. 
@@ -226,24 +225,13 @@ namespace DeadByDaylightRecogniser
 
         #region Reading Methods
         /// <summary>
-        /// Processes the image to extract and recognize the number using OCR.
+        /// Processes the image to extract the number.
         /// </summary>
         /// <param name="number">The <see cref="Mat"/> object representing the area in the image with the number.</param>
         /// <returns>An integer representing the recognized number. Returns 0 if recognition fails.</returns>
         private int ReadNumber(Mat number)
         {
-            using var t = new ResourcesTracker();
-            using var ocrInput = OcrApi.Create();
-            Mat gray = t.NewMat();
-            Cv2.CvtColor(number, gray, ColorConversionCodes.BGR2GRAY);
-
-            Mat binary = t.NewMat();
-            Cv2.Threshold(gray, binary, 128, 256, ThresholdTypes.Binary);
-            Cv2.BitwiseNot(binary, binary);
-
-            ocrInput.Init(Patagames.Ocr.Enums.Languages.English);
-
-            var ocrResult = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
+            var ocrResult = ReadOCR(number);
             string numericResult = Regex.Replace(ocrResult, @"\D", "").Trim();
             int result;
             try
@@ -257,32 +245,34 @@ namespace DeadByDaylightRecogniser
             return result;
         }
         /// <summary>
-        /// Processes the image to extract and recognize the name of player's character using OCR.
+        /// Processes the image to extract the name of player's character.
         /// </summary>
         /// <param name="character">The <see cref="Mat"/> object representing the area in the image with the character's name.</param>
-        /// <returns>A string representing the recognized character's name. Returns null if recognition fails.</returns>
+        /// <returns>A string representing the recognized character's name.</returns>
         private string ReadCharacter(Mat character)
+        {
+            var ocrResult = ReadOCR(character);
+            var result = Regex.Replace(ocrResult, @"[^A-Z\s]", "").Trim();
+            return result;
+        }
+        /// <summary>
+        /// Additional method to processes the image to extract and recognize the perk using OCR.
+        /// </summary>
+        /// <param name="data">The <see cref="Mat"/> object representing the area in the image with the extracting perk.</param>
+        /// <returns>A string reoresenting the recognized perk.</returns>
+        private string ReadOCR(Mat data)
         {
             using var t = new ResourcesTracker();
             using var ocrInput = OcrApi.Create();
             Mat gray = t.NewMat();
-            Cv2.CvtColor(character, gray, ColorConversionCodes.BGR2GRAY);
+            Cv2.CvtColor(data, gray, ColorConversionCodes.BGR2GRAY);
 
             Mat binary = t.NewMat();
             Cv2.Threshold(gray, binary, 128, 256, ThresholdTypes.Binary);
             Cv2.BitwiseNot(binary, binary);
 
             ocrInput.Init(Patagames.Ocr.Enums.Languages.English);
-            string result;
-            try
-            {
-                var ocrResult = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
-                result = Regex.Replace(ocrResult, @"[^A-Z\s]", "").Trim();
-            }
-            catch (Exception)
-            {
-                result = null;
-            }
+            string result = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
             return result;
         }
 
@@ -291,7 +281,7 @@ namespace DeadByDaylightRecogniser
         /// </summary>
         /// <param name="perks">The <see cref="Mat"/> object representing the area in the image with player's list of perks.</param>
         /// <returns>A string array with length 4 representing the recognized player's perks names. Returns null if recognition fails.</returns>
-        private string[] ReadPerks(Mat perks, string jsonPath, string role)
+        private string[] ReadPerks(Mat perks, string jsonPath, Role role)
         {
             string json = File.ReadAllText(jsonPath);
             List<DBDElement> perkList = JsonSerializer.Deserialize<List<DBDElement>>(json);
@@ -302,46 +292,11 @@ namespace DeadByDaylightRecogniser
 
             for (int i = 1; i <= 4; i++)
             {
-                using var t = new ResourcesTracker();
-                Mat perk = t.T(CropPerk(perks, i));
-                Cv2.Resize(perk, perk, new Size(ElementResizeSize, ElementResizeSize));
-                double alpha = 1.5;
-                double beta = 0;
-                perk.ConvertTo(perk, -1, alpha, beta);
-                Cv2.ImShow("br", perk);
-                Cv2.WaitKey();
-
-                Mat greyPerk = new Mat();
-                Cv2.CvtColor(perk, greyPerk, ColorConversionCodes.BGR2GRAY);
-
-                var orb = ORB.Create();
-                KeyPoint[] keypointsPerk;
-                Mat descriptorsPerk = new Mat();
-                orb.DetectAndCompute(greyPerk, null, out keypointsPerk, descriptorsPerk);
-
-
-                var bfMatcher = t.T(new BFMatcher(NormTypes.Hamming, crossCheck: true));
-
-                double maxMatchScore = 0;
-                string bestMatchPerkName = "Not Detected";
-
-                foreach (var perkTemplate in perkList.FindAll(e => e.Role.Equals(role.ToLower())))
-                {
-                    Mat templateDescriptors = t.T(Cv2.ImDecode(perkTemplate.Descriptors, ImreadModes.Grayscale));
-
-                    var matches = bfMatcher.Match(descriptorsPerk, templateDescriptors);
-                    double matchScore = matches.Length;
-
-                    //Console.WriteLine($"DBDElement {i}: {perkTemplate.Name} with {matchScore} matches.");
-                    if (matchScore > maxMatchScore && matchScore > 30)
-                    {
-                        maxMatchScore = matchScore;
-                        bestMatchPerkName = perkTemplate.Name;
-                    }
-                }
-
-                perkNames[i - 1] = bestMatchPerkName;
-                Console.WriteLine($"DBDElement {i}: {bestMatchPerkName} with {maxMatchScore} matches.");
+                Mat perk = CropPerk(perks, i);
+                var bestMatch = ReadDBDElement(perk, perkList, role);
+                perk.Dispose();
+                string name = bestMatch == null ? "Not Detected" : bestMatch.Value.Name;
+                perkNames[i - 1] = name;
             }
 
             return perkNames;
@@ -351,7 +306,7 @@ namespace DeadByDaylightRecogniser
         /// </summary>
         /// <param name="offering">The <see cref="Mat"/> object representing the area in the image with the player's offering.</param>
         /// <returns>A string representing the recognized offering name. Returns null if recognition fails.</returns>
-        private string ReadOffering(Mat offering)
+        private string ReadOffering(Mat offering, string jsonPath, Role role)
         {
             return null;
         }
@@ -360,10 +315,58 @@ namespace DeadByDaylightRecogniser
         /// </summary>
         /// <param name="item">The <see cref="Mat"/> object representing the area in the image with the player's item and its addons.</param>
         /// <returns>A <see cref="Item"/> object representing the recognized item's name and its addons. Returns null if recognition fails.</returns>
-        private DBDElement[] ReadItem(Mat item)
+        private DBDElement[] ReadItem(Mat item, string jsonItemsPath, string jsonAddonsPath, Role role)
         {
             return null;
-        } 
+        }
+        /// <summary>
+        /// Processes the image to extract the best match with data from <paramref name="elementData"/>
+        /// </summary>
+        /// <param name="element">The <see cref="Mat"/> object representing the area in the image with the element.</param>
+        /// <param name="elementData">The <see cref="List{DBDElement}"/> with data of elements for mathcing.</param>
+        /// <param name="role">The player's role to narrow chance of incorrect matching.</param>
+        /// <returns></returns>
+        private DBDElement? ReadDBDElement(Mat element, List<DBDElement> elementData, Role role)
+        {
+            using var t = new ResourcesTracker();
+            Cv2.Resize(element, element, new Size(ElementResizeSize, ElementResizeSize));
+            double alpha = 1.5;
+            double beta = 0;
+            element.ConvertTo(element, -1, alpha, beta);
+
+            Cv2.ImShow("br", element);
+            Cv2.WaitKey();
+
+            Mat grey = t.NewMat();
+            Cv2.CvtColor(element, grey, ColorConversionCodes.BGR2GRAY);
+
+            var orb = ORB.Create();
+            Mat elementDescriptors = t.NewMat();
+            orb.DetectAndCompute(grey, null, out KeyPoint[] keypointsPerk, elementDescriptors);
+
+
+            var bfMatcher = t.T(new BFMatcher(NormTypes.Hamming, crossCheck: true));
+
+            double maxMatchScore = 0;
+            DBDElement? bestMatch = null;
+            foreach (var template in elementData.FindAll(e => e.Role == role))
+            {
+                Mat templateDescriptors = t.T(Cv2.ImDecode(template.Descriptors, ImreadModes.Grayscale));
+
+                var matches = bfMatcher.Match(elementDescriptors, templateDescriptors);
+                double matchScore = matches.Length;
+
+                //Console.WriteLine($"DBDElement: {template.Name} with {matchScore} matches.");
+                if (matchScore > maxMatchScore && matchScore > 30)
+                {
+                    maxMatchScore = matchScore;
+                    bestMatch = template;
+                }
+            }
+            if(bestMatch != null)
+                Console.WriteLine($"DBDElement: {bestMatch.Value.Name} with {maxMatchScore} matches.");
+            return bestMatch;
+        }
         #endregion
 
         #region Additional Methods
@@ -417,52 +420,50 @@ namespace DeadByDaylightRecogniser
         /// <returns>The <see cref="Mat"/> object representing the image with the specified perk.</returns>
         private Mat CropPerk(Mat perks, int number)
         {
-            using (var t = new ResourcesTracker())
-            {
-                double perkWidthRatio = number == 4 ? 0.22 : 0.25;
-                double perkHeightRatio = 0.95;
-                double perkLeftRatio = number == 4
-                    ? 1 - perkWidthRatio
-                    : 0.009 * (number - 1) + perkWidthRatio * (number - 1);
-                double perkTopRatio = 0.05;
+            using var t = new ResourcesTracker();
+            double perkWidthRatio = number == 4 ? 0.22 : 0.25;
+            double perkHeightRatio = 0.95;
+            double perkLeftRatio = number == 4
+                ? 1 - perkWidthRatio
+                : 0.009 * (number - 1) + perkWidthRatio * (number - 1);
+            double perkTopRatio = 0.05;
 
-                var bounds = CalculateRect(perks, perkLeftRatio, perkTopRatio, perkWidthRatio, perkHeightRatio);
+            var bounds = CalculateRect(perks, perkLeftRatio, perkTopRatio, perkWidthRatio, perkHeightRatio);
 
-                Mat croppedImage = t.T(new Mat(perks, bounds));
+            Mat croppedImage = t.T(new Mat(perks, bounds));
 
-                Mat mask = t.T(Mat.Zeros(croppedImage.Size(), MatType.CV_8UC1));
-                Point center = new(croppedImage.Width / 2, croppedImage.Height / 2);
-                int size = Math.Min(croppedImage.Width, croppedImage.Height) / 2;
-                Point[] vertices = {
+            Mat mask = t.T(Mat.Zeros(croppedImage.Size(), MatType.CV_8UC1));
+            Point center = new(croppedImage.Width / 2, croppedImage.Height / 2);
+            int size = Math.Min(croppedImage.Width, croppedImage.Height) / 2;
+            Point[] vertices = {
                 new(center.X, center.Y + 1.15 * size),
                 new(center.X - 1.15 * size, center.Y),
                 new(center.X, center.Y - 0.95 * size),
                 new(center.X + 0.95 * size, center.Y)
             };
 
-                Cv2.FillConvexPoly(mask, vertices, Scalar.White);
+            Cv2.FillConvexPoly(mask, vertices, Scalar.White);
 
-                Mat result = t.NewMat();
-                croppedImage.CopyTo(result, mask);
-                Mat resultWithAlpha = new Mat(croppedImage.Size(), MatType.CV_8UC4);
+            Mat result = t.NewMat();
+            croppedImage.CopyTo(result, mask);
+            Mat resultWithAlpha = new Mat(croppedImage.Size(), MatType.CV_8UC4);
 
-                Cv2.CvtColor(result, resultWithAlpha, ColorConversionCodes.BGR2BGRA);
-                for (int y = 0; y < resultWithAlpha.Rows; y++)
+            Cv2.CvtColor(result, resultWithAlpha, ColorConversionCodes.BGR2BGRA);
+            for (int y = 0; y < resultWithAlpha.Rows; y++)
+            {
+                for (int x = 0; x < resultWithAlpha.Cols; x++)
                 {
-                    for (int x = 0; x < resultWithAlpha.Cols; x++)
+                    if (mask.At<byte>(y, x) == 0)
                     {
-                        if (mask.At<byte>(y, x) == 0)
-                        {
-                            resultWithAlpha.At<Vec4b>(y, x)[3] = 0;
-                        }
-                        else
-                        {
-                            resultWithAlpha.At<Vec4b>(y, x)[3] = 255;
-                        }
+                        resultWithAlpha.At<Vec4b>(y, x)[3] = 0;
+                    }
+                    else
+                    {
+                        resultWithAlpha.At<Vec4b>(y, x)[3] = 255;
                     }
                 }
-                return resultWithAlpha; 
             }
+            return resultWithAlpha;
         }
         #endregion
     }

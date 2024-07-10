@@ -15,7 +15,8 @@ namespace DeadByDaylightRecogniser.Utils.Extensions
             {
                 Role.Survivor => "survivor",
                 Role.Killer => "killer",
-                _ => throw new ArgumentOutOfRangeException(nameof(role), role, null)
+                Role.Unknown => "null",
+                _ => throw new NotImplementedException()
             };
         }
 
@@ -25,7 +26,7 @@ namespace DeadByDaylightRecogniser.Utils.Extensions
             {
                 "survivor" => Role.Survivor,
                 "killer" => Role.Killer,
-                _ => throw new ArgumentOutOfRangeException(nameof(role), role, null)
+                _ => Role.Unknown
             };
         }
     }

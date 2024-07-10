@@ -9,6 +9,7 @@ namespace DeadByDaylightRecogniser.Utils.Enums
 	internal enum Role
 	{
 		Survivor,
-		Killer
+		Killer,
+		Unknown
 	}
 }
