@@ -17,6 +17,8 @@ using System.Runtime.InteropServices;
 using System.Collections;
 using System.Net.Http;
 using DeadByDaylightRecogniser.Utils.Enums;
+using ResultRecogniser.Utils.Enums;
+using DeadByDaylightRecogniser.Utils.Extensions;
 
 namespace DeadByDaylightRecogniser
 {
@@ -45,6 +47,11 @@ namespace DeadByDaylightRecogniser
         private const double CharacterTopRatio = 0.0;
         private const double CharacterWidthRatio = 0.5;
         private const double CharacterHeightRatio = 0.3;
+
+        private const double StatusLeftRatio = 0.155;
+        private const double StatusTopRatio = 0.0;
+        private const double StatusWidthRatio = 0.035;
+        private const double StatusHeightRatio = 0.3;
 
         private const double PerksLeftRatio = 0.155;
         private const double PerksTopRatio = 0.43;
@@ -117,14 +124,25 @@ namespace DeadByDaylightRecogniser
             var prestige = ExtractPrestige(res, t);
             var score = ExtractScore(res, t);
             var character = ExtractCharacter(res, t);
-            //var perks = ExtractPerks(res, t, role);
-            //var offering = ExtractOffering(res, t, role);
+            var perks = ExtractPerks(res, t, role);
+            var offering = ExtractOffering(res, t, role);
             var item = ExtractItem(res, t, role);
+            var status = ExtractStatus(res, t, role);
+            
 
-            //Cv2.ImShow("r", res);
-            //Cv2.WaitKey();
-            Console.WriteLine($"{prestige} - {character} - {score}");
+            for(int i = 0; i < 4; i++)
+            {
+                Console.WriteLine($"Perk {i+1}: {perks[i]}");
+            }
+            Console.WriteLine($"Offering: {offering}");
+            Console.WriteLine($"Item: {item[0]}");
+            Console.WriteLine($"Addon 1: {item[1]}");
+            Console.WriteLine($"Addon 2: {item[2]}");
 
+            Console.WriteLine($"{prestige} - {character} - {score} - {status}\n");
+
+            Cv2.ImShow("Player result", res);
+            Cv2.WaitKey();
         }
         #endregion
 
@@ -165,6 +183,12 @@ namespace DeadByDaylightRecogniser
             var bounds = CalculateRect(res, CharacterLeftRatio, CharacterTopRatio, CharacterWidthRatio, CharacterHeightRatio);
             var mat = t.T(new Mat(res, bounds));
             return ReadCharacter(mat);
+        }
+        private string ExtractStatus(Mat res, ResourcesTracker t, Role role)
+        {
+            var bounds = CalculateRect(res, StatusLeftRatio, StatusTopRatio, StatusWidthRatio, StatusHeightRatio);
+            var mat = t.T(new Mat(res, bounds));
+            return ReadStatus(mat, role);
         }
         /// <summary>
         /// Extracts the names of the player's perks from the image. 
@@ -273,7 +297,20 @@ namespace DeadByDaylightRecogniser
             string result = ocrInput.GetTextFromImage(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(binary));
             return result;
         }
+        private string ReadStatus(Mat status, Role role)
+        {
+            var statusData = TemplateDownloader.GetStatuses();
+            var bestMatch = ReadDBDElement(status, statusData, role, 0.9, -20);
+            if (role == Role.Survivor && bestMatch == null)
+                return Status.Playing.ToFriendlyString();
+            if (role == Role.Killer && bestMatch == null)
+                return Status.Killer.ToFriendlyString();
 
+            Status statusResult = StatusExtensions.FromFriendlyString(bestMatch.Value.Name);
+            if (role == Role.Killer && statusResult != Status.Disconnected)
+                return Status.Killer.ToFriendlyString();
+            return statusResult.ToFriendlyString();
+        }
         /// <summary>
         /// Processes the image to extract and recognize the names of player's perks using OpenCVsharp.
         /// </summary>
@@ -343,10 +380,10 @@ namespace DeadByDaylightRecogniser
                 ApplyMask(addon1, CalculateRect(addon1, 0.75, 0, 0.3, 0.4));
                 ApplyMask(addon2, CalculateRect(addon2, 0.75, 0, 0.3, 0.4));
 
-                double contrast = 0.8;
-                double brightness = -15;
+                double contrast = 0.9;
+                double brightness = -30;
 
-                DBDElement? itemMatch = ReadDBDElement(itemCropped, itemList, role, contrast, brightness);
+                DBDElement? itemMatch = ReadDBDElement(itemCropped, itemList, role, role == Role.Survivor ? 0.65 : 0.9, role == Role.Survivor ? -21 : -10);
                 DBDElement? addon1Match = null;
                 DBDElement? addon2Match = null;
                 if (itemMatch != null)
@@ -394,8 +431,9 @@ namespace DeadByDaylightRecogniser
 
             element.ConvertTo(element, -1, elementContrast, elementBrightness);
 
-            Cv2.ImShow("element", element);
-            Cv2.WaitKey();
+            Cv2.CvtColor(element, element, ColorConversionCodes.BGR2GRAY);
+            //Cv2.ImShow("element", element);
+            //Cv2.WaitKey();
 
             var orb = ORB.Create();
             Mat elementDescriptors = t.NewMat();
@@ -430,8 +468,8 @@ namespace DeadByDaylightRecogniser
                     bestMatch = template;
                 }
             }
-            if(bestMatch != null)
-                Console.WriteLine($"DBDElement: {bestMatch.Value.Name} with {maxMatchScore} matches.");
+            //if(bestMatch != null)
+                //Console.WriteLine($"DBDElement: {bestMatch.Value.Name} with {maxMatchScore} matches.");
             return bestMatch;
         }
         #endregion

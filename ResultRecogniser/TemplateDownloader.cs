@@ -71,8 +71,10 @@ namespace DeadByDaylightRecogniser
                                 role = Role.Killer;
                             else
                                 role = RoleExtensions.FromFriendlyString(element.Value.GetProperty("role").GetString());
-                            id = element.Key;
                             name = element.Value.GetProperty("name").GetString();
+                            if (name.Contains("Anniversary"))
+                                break;
+                            id = element.Key;
                             if (element.Value.TryGetProperty("parents", out JsonElement p)
                                 && p.GetArrayLength() != 0)
                                 parent = p[0].GetString();
@@ -99,6 +101,26 @@ namespace DeadByDaylightRecogniser
             string json = JsonSerializer.Serialize(elements);
             File.WriteAllText(jsonPath, json);
             return elements;
+        }
+
+        public static List<DBDElement> GetStatuses()
+        {
+            string baseDirectory = AppContext.BaseDirectory;
+            string imgDirectory = Path.Combine(baseDirectory, @"..\..\..\img\");
+
+            var files = Directory.EnumerateFiles(imgDirectory, "*.png", SearchOption.AllDirectories);
+            List<DBDElement> statuses = new List<DBDElement>();
+            foreach (var file in files)
+            {
+                var element = new DBDElement()
+                {
+                    Name = Path.GetFileNameWithoutExtension(file),
+                    Role = Role.Unknown,
+                    Descriptors = GetDescriptors(file)
+                };
+                statuses.Add(element);
+            }
+            return statuses;
         }
 
         private static byte[] GetDescriptors(string filePath)

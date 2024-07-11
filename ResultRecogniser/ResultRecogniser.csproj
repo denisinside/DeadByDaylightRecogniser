@@ -15,4 +15,8 @@
     <PackageReference Include="Tesseract.Net.SDK" Version="4.6.411" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="img\" />
+  </ItemGroup>
+
 </Project>
