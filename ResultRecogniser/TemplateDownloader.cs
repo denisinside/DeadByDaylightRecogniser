@@ -26,7 +26,7 @@ namespace DeadByDaylightRecogniser
             var files = Directory.EnumerateFiles(dataPath, "*.png", SearchOption.AllDirectories);
             if (additionalDataPath != null)
             {
-                files.Concat(Directory.EnumerateFiles(additionalDataPath, "*.png", SearchOption.AllDirectories));
+                files = files.Concat(Directory.EnumerateFiles(additionalDataPath, "*.png", SearchOption.AllDirectories));
             }
 
             foreach (var filePath in files)
@@ -36,30 +36,64 @@ namespace DeadByDaylightRecogniser
 
 
                 string name = Path.GetFileNameWithoutExtension(filePath);
-                name = name.Substring(name.LastIndexOf("_") + 1);
+                if(name.Contains("anniversary"))
+                    name = name[(name.IndexOf('_') + 1)..];
+                else
+                    name = name[(name.LastIndexOf('_') + 1)..];
 
-                Role role = Role.Unknown;
+                string id = null;
+                var role = Role.Unknown;
+                string? parent = null;
+                string? itemType = null;
+
                 foreach (var element in data)
                 {
-                    JsonElement property;
-                    if (element.Value.TryGetProperty("image", out property) 
+                    if (element.Value.TryGetProperty("image", out JsonElement property)
                         && property.GetString() != null
                         && property.GetString().ToLower().EndsWith($"{name}.png".ToLower()))
                     {
-                        role = RoleExtensions.FromFriendlyString(element.Value.GetProperty("role").GetString());
-                        name = element.Value.GetProperty("name").GetString();
-                        break;
+                        if(!(element.Value.TryGetProperty("type", out JsonElement type)
+                           && type.GetString().Equals("none")))
+                        {
+                            if (type.ValueKind != JsonValueKind.Undefined 
+                                && (type.GetString().Equals("item") || type.GetString().Equals("itemaddon")))
+                            {
+                                if (element.Value.TryGetProperty("item_type", out JsonElement i)
+                                    && i.GetString() != null
+                                    && !i.GetString().Equals("firecracker"))
+                                    itemType = i.GetString();
+                                else
+                                    break;
+                            }
+
+                            if (type.ValueKind != JsonValueKind.Undefined
+                                && type.GetString().Equals("power"))
+                                role = Role.Killer;
+                            else
+                                role = RoleExtensions.FromFriendlyString(element.Value.GetProperty("role").GetString());
+                            id = element.Key;
+                            name = element.Value.GetProperty("name").GetString();
+                            if (element.Value.TryGetProperty("parents", out JsonElement p)
+                                && p.GetArrayLength() != 0)
+                                parent = p[0].GetString();
+                            break;
+                        }    
+                        else
+                            break;
                     }
                 }
-                if (role != null)
+                if (id != null)
                 {
-                    DBDElement perk = new DBDElement
+                    var element = new DBDElement
                     {
+                        ID = id,
                         Name = name,
-                        Descriptors = GetDescriptors(filePath),
-                        Role = role
+                        Role = role,
+                        Parent = parent,
+                        ItemType = itemType,
+                        Descriptors = GetDescriptors(filePath)
                     };
-                    elements.Add(perk);
+                    elements.Add(element);
                 }
             }
             string json = JsonSerializer.Serialize(elements);
@@ -69,15 +103,18 @@ namespace DeadByDaylightRecogniser
 
         private static byte[] GetDescriptors(string filePath)
         {
-            using(var t = new  ResourcesTracker())
-            {
-                var orb = ORB.Create();
-                Mat img = t.T(Cv2.ImRead(filePath, ImreadModes.Grayscale));
-                Cv2.Resize(img, img, new Size(ResultProcessing.ElementResizeSize, ResultProcessing.ElementResizeSize));
-                Mat descriptors = t.NewMat();
-                orb.DetectAndCompute(img, null, out _, descriptors);
-                return descriptors.ToBytes();
-            }
+            using var t = new ResourcesTracker();
+            var orb = ORB.Create();
+            Mat img = t.T(ResultProcessing.ReadPNG(filePath));
+            Cv2.CvtColor(img, img, ColorConversionCodes.BGR2GRAY);
+            Cv2.Resize(img, img, new Size(ResultProcessing.ElementResizeSize, ResultProcessing.ElementResizeSize));
+            //Cv2.ImShow(filePath + "1 ", img);
+            //Cv2.Threshold(img, img, 128, 300, ThresholdTypes.Otsu);
+            //Cv2.ImShow(filePath, img);
+            //Cv2.WaitKey();
+            Mat descriptors = t.NewMat();
+            orb.DetectAndCompute(img, null, out _, descriptors);
+            return descriptors.ToBytes();
         }
     }
 

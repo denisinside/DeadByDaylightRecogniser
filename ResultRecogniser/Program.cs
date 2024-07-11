@@ -14,7 +14,7 @@ namespace DeadByDaylightRecogniser
         static async Task Main(string[] args)
         {
             //await UploadData();
-            var rp = new ResultProcessing("img\\example2.png");
+            var rp = new ResultProcessing("img\\example.png");
             rp.Process();
         }
 
@@ -41,6 +41,13 @@ namespace DeadByDaylightRecogniser
             response.EnsureSuccessStatusCode();
             jsonResponse = await response.Content.ReadAsStringAsync();
             Dictionary<string, JsonElement> itemsData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonResponse);
+
+
+            foreach (var item in itemsData)
+            {
+                if (item.Value.GetProperty("type").GetString().Equals("none"))
+                    itemsData.Remove(item.Key);
+            }
 
             TemplateDownloader.DownloadTemplates("items.json", itemsData,
                 @"C:\\Program Files (x86)\\Steam\\steamapps\\common\\Dead by Daylight\\DeadByDaylight\\Content\\UI\\Icons\\Items\",

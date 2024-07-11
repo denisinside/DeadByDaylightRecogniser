@@ -57,9 +57,9 @@ namespace DeadByDaylightRecogniser
         private const double OfferingHeightRatio = 0.42;
 
         private const double ItemLeftRatio = 0.55;
-        private const double ItemTopRatio = 0.35;
-        private const double ItemWidthRatio = 0.2;
-        private const double ItemHeightRatio = 0.65;
+        private const double ItemTopRatio = 0.47;
+        private const double ItemWidthRatio = 0.19;
+        private const double ItemHeightRatio = 0.425;
         #endregion
 
         private Mat _result;
@@ -113,19 +113,17 @@ namespace DeadByDaylightRecogniser
         /// <param name="res">The <see cref="Mat"/> object representing the image of a player result</param>
         private void ProcessPlayerResult(Mat res, Role role)
         {
-            using (var t = new ResourcesTracker())
-            {
-                var prestige = ExtractPrestige(res, t);
-                var score = ExtractScore(res, t);
-                var character = ExtractCharacter(res, t);
-                var perks = ExtractPerks(res, t, role);
-                var offering = ExtractOffering(res, t, role);
-                //var item = ExtractItem(res, t, role);
+            using var t = new ResourcesTracker();
+            var prestige = ExtractPrestige(res, t);
+            var score = ExtractScore(res, t);
+            var character = ExtractCharacter(res, t);
+            //var perks = ExtractPerks(res, t, role);
+            //var offering = ExtractOffering(res, t, role);
+            var item = ExtractItem(res, t, role);
 
-                //Cv2.ImShow("r", res);
-                //Cv2.WaitKey();
-                Console.WriteLine($"{prestige} - {character} - {score}");
-            }
+            //Cv2.ImShow("r", res);
+            //Cv2.WaitKey();
+            Console.WriteLine($"{prestige} - {character} - {score}");
 
         }
         #endregion
@@ -198,11 +196,10 @@ namespace DeadByDaylightRecogniser
         /// <param name="res">The <see cref="Mat"/> object representing image to be processed.</param>
         /// <param name="t">The <see cref="ResourcesTracker"/> object to dispose <see cref="Mat"/> objects in a code.</param>
         /// <returns>A <see cref="Item"/> object representing the player's item name and its addons names. Returns null if recognition fails.</returns>
-        private DBDElement[] ExtractItem(Mat res, ResourcesTracker t, Role role)
+        private string[] ExtractItem(Mat res, ResourcesTracker t, Role role)
         {
             var bounds = CalculateRect(res, ItemLeftRatio, ItemTopRatio, ItemWidthRatio, ItemHeightRatio);
             var mat = t.T(new Mat(res, bounds));
-            Cv2.ImShow("item",mat);
             return ReadItem(mat, "items.json","addons.json", role);
         }
         /// <summary>
@@ -315,7 +312,7 @@ namespace DeadByDaylightRecogniser
             if (offeringList == null)
                 return null;
 
-            var bestMatch = ReadDBDElement(offering, offeringList, role, -50);
+            var bestMatch = ReadDBDElement(offering, offeringList, role, 1.75, -110);
 
             return bestMatch == null ? "Not Detected" : bestMatch.Value.Name;
         }
@@ -324,10 +321,65 @@ namespace DeadByDaylightRecogniser
         /// </summary>
         /// <param name="item">The <see cref="Mat"/> object representing the area in the image with the player's item and its addons.</param>
         /// <returns>A <see cref="Item"/> object representing the recognized item's name and its addons. Returns null if recognition fails.</returns>
-        private DBDElement[] ReadItem(Mat item, string jsonItemsPath, string jsonAddonsPath, Role role)
+        private string[] ReadItem(Mat item, string jsonItemsPath, string jsonAddonsPath, Role role)
         {
-            return null;
+            string json = File.ReadAllText(jsonItemsPath);
+            List<DBDElement> itemList = JsonSerializer.Deserialize<List<DBDElement>>(json);
+            if (itemList == null)
+                return null;
+            json = File.ReadAllText(jsonAddonsPath);
+            List<DBDElement> addonList = JsonSerializer.Deserialize<List<DBDElement>>(json);
+            if (addonList == null)
+                return null;
+
+            string[] res = new string[3];
+
+            using (var t = new ResourcesTracker())
+            {
+                Mat itemCropped = t.T(new Mat(item, CalculateRect(item, 0.02, 0.1, 0.3, 0.8)));
+                Mat addon1 = t.T(new Mat(item, CalculateRect(item, 0.47, 0, 0.25, 0.9)));
+                Mat addon2 = t.T(new Mat(item, CalculateRect(item, 0.75, 0, 0.25, 0.9)));
+
+                ApplyMask(addon1, CalculateRect(addon1, 0.75, 0, 0.3, 0.4));
+                ApplyMask(addon2, CalculateRect(addon2, 0.75, 0, 0.3, 0.4));
+
+                double contrast = 0.8;
+                double brightness = -15;
+
+                DBDElement? itemMatch = ReadDBDElement(itemCropped, itemList, role, contrast, brightness);
+                DBDElement? addon1Match = null;
+                DBDElement? addon2Match = null;
+                if (itemMatch != null)
+                {
+                    if(role == Role.Survivor)
+                    {
+                        addon1Match = ReadDBDElement(addon1, addonList, role, contrast, brightness, filterByItemType: itemMatch.Value.ItemType);
+                        if (addon1Match != null)
+                            addonList.Remove((DBDElement)addon1Match);
+                        addon2Match = ReadDBDElement(addon2, addonList, role, contrast, brightness, filterByItemType: itemMatch.Value.ItemType);
+                    } 
+                    else
+                    {
+                        addon1Match = ReadDBDElement(addon1, addonList, role, contrast, brightness, filterByParent: itemMatch.Value.ID);
+                        if (addon1Match != null)
+                            addonList.Remove((DBDElement)addon1Match);
+                        addon2Match = ReadDBDElement(addon2, addonList, role, contrast, brightness, filterByParent: itemMatch.Value.ID);
+                    }
+
+                }
+                res[0] = itemMatch == null ? "Not Detected" : itemMatch.Value.Name;
+                res[1] = addon1Match == null ? "Not Detected" : addon1Match.Value.Name;
+                res[2] = addon2Match == null ? "Not Detected" : addon2Match.Value.Name;
+            }
+
+            return res;
         }
+
+        private void ApplyMask(Mat img, Rect maskRect)
+        {
+            Cv2.Rectangle(img, maskRect, new Scalar(0, 0, 0), -1);
+        }
+
         /// <summary>
         /// Processes the image to extract the best match with data from <paramref name="elementData"/>
         /// </summary>
@@ -335,46 +387,44 @@ namespace DeadByDaylightRecogniser
         /// <param name="elementData">The <see cref="List{DBDElement}"/> with data of elements for mathcing.</param>
         /// <param name="role">The player's role to narrow chance of incorrect matching.</param>
         /// <returns>The <see cref="DBDElement"/> with the best matching result. Return null if the match score is too low.</returns>
-        private DBDElement? ReadDBDElement(Mat element, List<DBDElement> elementData, Role role, double elementBrightness = -20)
+        private DBDElement? ReadDBDElement(Mat element, List<DBDElement> elementData, Role role, double elementContrast = 1.25, double elementBrightness = -40, string? filterByParent = null, string? filterByItemType = null)
         {
             using var t = new ResourcesTracker();
             Cv2.Resize(element, element, new Size(ElementResizeSize, ElementResizeSize));
 
-
-            double alpha = 1.5;
-            double beta = elementBrightness;
-            element.ConvertTo(element, -1, alpha, beta);
+            element.ConvertTo(element, -1, elementContrast, elementBrightness);
 
             Cv2.ImShow("element", element);
             Cv2.WaitKey();
 
-            Mat grey = t.NewMat();
-            Cv2.CvtColor(element, grey, ColorConversionCodes.BGR2GRAY);
-            element.Dispose();
-
-            //if (useTreshold)
-            //    Cv2.Threshold(grey, grey, 180, 300, ThresholdTypes.Otsu);
-
-            //Cv2.ImShow("element", grey);
-            //Cv2.WaitKey();
             var orb = ORB.Create();
             Mat elementDescriptors = t.NewMat();
-            orb.DetectAndCompute(grey, null, out KeyPoint[] keypointsPerk, elementDescriptors);
+            orb.DetectAndCompute(element, null, out KeyPoint[] keypointsPerk, elementDescriptors);
 
+            element.Dispose();
 
             var bfMatcher = t.T(new BFMatcher(NormTypes.Hamming, crossCheck: true));
 
             double maxMatchScore = 0;
             DBDElement? bestMatch = null;
-            foreach (var template in elementData.FindAll(e => e.Role == role || e.Role == Role.Unknown))
+
+            var matchingData = elementData.FindAll(
+                e => (e.Role == role || e.Role == Role.Unknown)
+                && (filterByParent == null || (e.Parent != null && e.Parent.Equals(filterByParent)))
+                && (filterByItemType == null || (e.ItemType != null && e.ItemType.Equals(filterByItemType)))
+                );
+
+            //Console.WriteLine();
+
+            foreach (var template in matchingData)
             {
                 Mat templateDescriptors = t.T(Cv2.ImDecode(template.Descriptors, ImreadModes.Grayscale));
 
                 var matches = bfMatcher.Match(elementDescriptors, templateDescriptors);
                 double matchScore = matches.Length;
 
-                //Console.WriteLine($"DBDElement: {template.Name} with {matchScore} matches.");
-                if (matchScore > maxMatchScore && matchScore > 30)
+                //Console.WriteLine($"DBDElement: {template.Name} ({template.ItemType}) with {matchScore} matches.");
+                if (matchScore > maxMatchScore && matchScore > 20)
                 {
                     maxMatchScore = matchScore;
                     bestMatch = template;
@@ -452,12 +502,12 @@ namespace DeadByDaylightRecogniser
             Mat mask = t.T(Mat.Zeros(croppedImage.Size(), MatType.CV_8UC1));
             Point center = new(croppedImage.Width / 2, croppedImage.Height / 2);
             int size = Math.Min(croppedImage.Width, croppedImage.Height) / 2;
-            Point[] vertices = {
+            Point[] vertices = [
                 new(center.X, center.Y + 1.15 * size),
                 new(center.X - 1.15 * size, center.Y),
                 new(center.X, center.Y - 0.95 * size),
                 new(center.X + 0.95 * size, center.Y)
-            };
+            ];
 
             Cv2.FillConvexPoly(mask, vertices, Scalar.White);
 

@@ -9,9 +9,11 @@ namespace DeadByDaylightRecogniser.Models
 {
     internal struct DBDElement
     {
+        public string ID { get; set; }
         public string Name { get; set; }
         public Role Role { get; set; }
         public string? Parent { get; set; }
+        public string? ItemType { get; set; }
         public byte[] Descriptors { get; set; }
     }
 
